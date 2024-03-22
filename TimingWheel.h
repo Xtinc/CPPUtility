@@ -93,8 +93,8 @@ class TimingWheel
     using tw_nth_t = lattice[TWN_SIZE];
 
 public:
-    TimingWheel(uint64_t current_time)
-        : lasttime(current_time), currtick(0)
+    TimingWheel(uint32_t current_time = 0)
+        : currtick(current_time)
     {
         for (size_t i = 0; i < TWR_SIZE; i++)
         {
@@ -237,7 +237,6 @@ private:
 private:
     tw_fst_t tw_1st;
     tw_nth_t tw_nth[4];
-    uint64_t lasttime;
     uint32_t currtick;
 };
 

@@ -51,6 +51,7 @@ class TimingWheel
         lattice *prev;
         lattice *next;
         uint32_t expired;
+        bool periodic;
         F ele;
 
         static void set_init(lattice *node)
@@ -58,6 +59,7 @@ class TimingWheel
             node->prev = node;
             node->next = node;
             node->expired = 0;
+            node->periodic = false;
         }
 
         void *operator new(size_t)
@@ -110,22 +112,22 @@ public:
         }
     }
 
-    void set_task(const F &f, AbsoluteTimeTick time)
+    void set_task(const F &f, AbsoluteTimeTick time, bool periodic = false)
     {
         auto *head = calculate_lattice(time.tick);
-        auto *temp = new lattice{head->prev, head, time.tick, f};
+        auto *temp = new lattice{head->prev, head, time.tick, periodic, f};
         temp->prev->next = temp;
         head->prev = temp;
     }
 
-    void set_task(const F &f, RelativeTimeTick time)
+    void set_task(const F &f, RelativeTimeTick time, bool periodic = false)
     {
         if (time.tick == 0)
         {
             time.tick = 1;
         }
         auto *head = calculate_lattice(time.tick + currtick);
-        auto *temp = new lattice{head->prev, head, time.tick + currtick, f};
+        auto *temp = new lattice{head->prev, head, (periodic ? 0 : currtick) + time.tick, periodic, f};
         temp->prev->next = temp;
         head->prev = temp;
     }
@@ -152,8 +154,24 @@ public:
             std::cout << " ptr: " << (void *)temp << " ele: " << temp->ele << " ticks: " << temp->expired << std::endl;
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
-            delete temp;
+            if (temp->periodic)
+            {
+                auto *head = calculate_lattice(temp->expired);
+                temp->prev = head->prev;
+                temp->next = head;
+                temp->prev->next = temp;
+                head->prev = temp;
+            }
+            else
+            {
+                delete temp;
+            }
         }
+    }
+
+    uint32_t now() const
+    {
+        return currtick;
     }
 
     // only for debug
@@ -196,9 +214,7 @@ public:
 private:
     lattice *calculate_lattice(uint32_t ticks)
     {
-        // uint32_t expired_tick = currtick + (ticks > 0 ? ticks : 1);
         uint32_t expired_tick = currtick + ticks;
-        // uint32_t idx = expired_tick - currtick;
         lattice *head{};
         if (ticks < TWR_SIZE)
         {

@@ -6,6 +6,26 @@
 // only for debug
 #include <iomanip>
 
+struct AbsoluteTimeTick
+{
+    uint32_t tick;
+};
+
+struct RelativeTimeTick
+{
+    uint32_t tick;
+};
+
+constexpr AbsoluteTimeTick operator"" _ABST(unsigned long long t)
+{
+    return {static_cast<uint32_t>(t)};
+}
+
+constexpr RelativeTimeTick operator"" _RELT(unsigned long long t)
+{
+    return {static_cast<uint32_t>(t)};
+}
+
 template <typename F>
 class TimingWheel
 {
@@ -38,21 +58,6 @@ class TimingWheel
             node->prev = node;
             node->next = node;
             node->expired = 0;
-        }
-
-        static void swap_head(lattice *head1, lattice *head2)
-        {
-            if (head1 != head1->next)
-            {
-                auto *head = head1->next;
-                auto *tail = head1->prev;
-                auto *at = head2->next;
-                head->prev = head2;
-                head2->next = head;
-                tail->next = at;
-                at->prev = last;
-                set_init(head1);
-            }
         }
 
         void *operator new(size_t)
@@ -105,10 +110,22 @@ public:
         }
     }
 
-    void set_task(const F &f, uint32_t ticks)
+    void set_task(const F &f, AbsoluteTimeTick time)
     {
-        auto *head = calculate_lattice(ticks);
-        auto *temp = new lattice{head->prev, head, ticks, f};
+        auto *head = calculate_lattice(time.tick);
+        auto *temp = new lattice{head->prev, head, time.tick, f};
+        temp->prev->next = temp;
+        head->prev = temp;
+    }
+
+    void set_task(const F &f, RelativeTimeTick time)
+    {
+        if (time.tick == 0)
+        {
+            time.tick = 1;
+        }
+        auto *head = calculate_lattice(time.tick + currtick);
+        auto *temp = new lattice{head->prev, head, time.tick + currtick, f};
         temp->prev->next = temp;
         head->prev = temp;
     }
@@ -179,10 +196,11 @@ public:
 private:
     lattice *calculate_lattice(uint32_t ticks)
     {
-        uint32_t expired_tick = currtick + (ticks > 0 ? ticks : 1);
-        uint32_t idx = expired_tick - currtick;
+        // uint32_t expired_tick = currtick + (ticks > 0 ? ticks : 1);
+        uint32_t expired_tick = currtick + ticks;
+        // uint32_t idx = expired_tick - currtick;
         lattice *head{};
-        if (idx < TWR_SIZE)
+        if (ticks < TWR_SIZE)
         {
             head = tw_1st + FST_IDX(expired_tick);
         }
@@ -191,7 +209,7 @@ private:
             for (size_t i = 0; i < 4; i++)
             {
                 uint64_t sz = 1ull << (TWR_BITS + (i + 1) * TWN_BITS);
-                if (idx < sz)
+                if (ticks < sz)
                 {
                     head = tw_nth[i] + NTH_IDX(expired_tick, i);
                     break;
@@ -208,7 +226,7 @@ private:
             lattice *temp = head->next;
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
-            auto *head = calculate_lattice(temp->expired);
+            auto *head = calculate_lattice(temp->expired - currtick);
             temp->prev = head->prev;
             temp->next = head;
             temp->prev->next = temp;

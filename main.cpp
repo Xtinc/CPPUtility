@@ -2,54 +2,67 @@
 #include <chrono>
 #include <thread>
 
-struct testccc
+struct self_print
 {
-    int a;
-    int tst()
+    void operator()(const char *str)
     {
-        printf("%d\n", a);
-        return 4;
+        auto now = std::chrono::system_clock::now();
+        time_t time = std::chrono::system_clock::to_time_t(now);
+        std::cout << "self_print: " << ctime(&time) << str << "\n";
     }
 };
 
-void print_t(int a)
+struct mem_print
 {
-    printf("%d\n", a);
-}
+    const char *str;
+    void print_custom()
+    {
+        auto now = std::chrono::system_clock::now();
+        time_t time = std::chrono::system_clock::to_time_t(now);
+        std::cout << "print_custom: " << ctime(&time) << " " << str << "\n";
+    }
+    time_t get_time()
+    {
+        auto now = std::chrono::system_clock::now();
+        time_t time = std::chrono::system_clock::to_time_t(now);
+        std::cout << "print_custom: " << ctime(&time) << " " << str << "\n";
+        return time;
+    }
+};
 
 int main(int, char **)
 {
-    testccc ccc{12};
+    mem_print t1{"test member function"};
+    self_print t2;
     TimingWheel tw;
-    tw.set_task(TimingWheel::HOSTING, 1_ABST, print_t, 1);
-    tw.set_task(TimingWheel::HOSTING, 1_ABST, print_t, 2);
-    tw.set_task(TimingWheel::HOSTING, 4_ABST, print_t, 3);
-    tw.set_task(TimingWheel::HOSTING, 2_ABST, print_t, 4);
-    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 5);
-    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 6);
-    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 7);
-    tw.set_task(TimingWheel::HOSTING, 5_ABST, print_t, 8);
-    tw.set_task(TimingWheel::HOSTING, 8_ABST, print_t, 9);
-    tw.set_task(TimingWheel::HOSTING, 19_ABST, &testccc::tst, ccc);
-    tw.set_task(TimingWheel::HOSTING, 10_ABST, &testccc::tst, ccc);
-    auto fff = tw.set_task(TimingWheel::INTERACT, 10_ABST, &testccc::tst, ccc);
+    tw.set_task(TimingWheel::HOSTING, 1_ABST, &mem_print::print_custom, t1);
+    tw.set_task(TimingWheel::HOSTING, 1_ABST, t2, "32");
+    tw.set_task(TimingWheel::HOSTING, 4_ABST, t2, "33");
+    // tw.set_task(TimingWheel::CYCLE, 2_ABST, t2, "34");
+    tw.set_task(TimingWheel::INTERACT, 3_ABST, t2, "interact");
+    tw.set_task(TimingWheel::HOSTING, 8_ABST, &mem_print::print_custom, t1);
+    tw.set_task(TimingWheel::HOSTING, 10_ABST, &mem_print::print_custom, t1);
+    tw.set_task(TimingWheel::HOSTING, 20_ABST, &mem_print::get_time, t1);
+    auto fff = tw.set_task(TimingWheel::INTERACT, 10_ABST, &mem_print::print_custom, t1);
     for (size_t i = 0; i < 10; i++)
     {
         tw.go();
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    tw.set_task(TimingWheel::HOSTING, 0_RELT, print_t, 11);
-    tw.set_task(TimingWheel::HOSTING, 0_RELT, print_t, 11);
-    tw.set_task(TimingWheel::HOSTING, 1_RELT, print_t, 12);
+    tw.set_task(TimingWheel::HOSTING, 0_RELT, &mem_print::print_custom, t1);
+    tw.set_task(TimingWheel::HOSTING, 0_RELT, t2, "45");
+    tw.set_task(TimingWheel::HOSTING, 1_RELT, t2, "46");
     tw.set_task(TimingWheel::INTERACT, 256_ABST, []()
                 { printf("256_ABST\n"); });
-    tw.set_task(TimingWheel::HOSTING, 1048576_ABST, []()
-                { printf("1048576_ABST\n"); });
-    tw.set_task(TimingWheel::CYCLE, 5_RELT, []()
+    tw.set_task(TimingWheel::HOSTING, 209_ABST, []()
+                { printf("size of lattice: %zu\n", sizeof(TimingWheel)); });
+    tw.set_task(TimingWheel::PERIODIC, 5_RELT, []()
                 { printf("print period!\n"); });
-    for (size_t i = 0; i < 50; i++)
+    tw.set_task(TimingWheel::CYCLES, 10_RELT, 10, []()
+                { printf("run cycles\n"); });
+    for (size_t i = 0; i < 500; i++)
     {
         tw.go();
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }

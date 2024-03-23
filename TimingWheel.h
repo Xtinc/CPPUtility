@@ -1,18 +1,32 @@
 #ifndef TIMING_WHEEL_HEADER
 #define TIMING_WHEEL_HEADER
 
-#include <cstddef>
+#include <type_traits>
+#include <functional>
+#include <future>
 #include <iostream>
 // only for debug
 #include <iomanip>
 
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(__cpp_lib_is_invocable)
+#define TW_SAFE_INVOKE_RT std::invoke_result
+#else
+#define TW_SAFE_INVOKE_RT std::result_of
+#endif
+#else
+#define TW_SAFE_INVOKE_RT std::result_of
+#endif
+
 struct AbsoluteTimeTick
 {
+    constexpr AbsoluteTimeTick(uint32_t t) : tick(t){};
     uint32_t tick;
 };
 
 struct RelativeTimeTick
 {
+    constexpr RelativeTimeTick(uint32_t t) : tick(t){};
     uint32_t tick;
 };
 
@@ -26,9 +40,18 @@ constexpr RelativeTimeTick operator"" _RELT(unsigned long long t)
     return {static_cast<uint32_t>(t)};
 }
 
-template <typename F>
 class TimingWheel
 {
+    struct HOSTING_T
+    {
+    };
+    struct PERIODIC_T
+    {
+    };
+    struct INTERACT_T
+    {
+    };
+
     constexpr static uint32_t TWR_BITS = 8;
     constexpr static uint32_t TWN_BITS = 6;
     constexpr static uint32_t TWR_SIZE = 1 << TWR_BITS;
@@ -52,7 +75,7 @@ class TimingWheel
         lattice *next;
         uint32_t expired;
         bool periodic;
-        F ele;
+        std::function<void()> ele;
 
         static void set_init(lattice *node)
         {
@@ -95,6 +118,10 @@ class TimingWheel
     using tw_nth_t = lattice[TWN_SIZE];
 
 public:
+    constexpr static HOSTING_T HOSTING{};
+    constexpr static PERIODIC_T CYCLE{};
+    constexpr static INTERACT_T INTERACT{};
+
     TimingWheel(uint32_t current_time = 0)
         : currtick(current_time)
     {
@@ -112,24 +139,76 @@ public:
         }
     }
 
-    void set_task(const F &f, AbsoluteTimeTick time, bool periodic = false)
+    template <class Fn, class... Args>
+    void set_task(HOSTING_T, AbsoluteTimeTick time, Fn &&Fx, Args &&...Ax)
     {
-        auto *head = calculate_lattice(time.tick);
-        auto *temp = new lattice{head->prev, head, time.tick, periodic, f};
-        temp->prev->next = temp;
-        head->prev = temp;
+        auto temp = new lattice{nullptr, nullptr, time.tick, false,
+                                std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
+        insert_lattice(time.tick, temp);
     }
 
-    void set_task(const F &f, RelativeTimeTick time, bool periodic = false)
+    template <class Fn, class... Args>
+    void set_task(PERIODIC_T, AbsoluteTimeTick time, Fn &&Fx, Args &&...Ax)
+    {
+        auto temp = new lattice{nullptr, nullptr, time.tick, true,
+                                std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
+        insert_lattice((currtick / time.tick + 1) * time.tick, temp);
+    }
+
+    template <class Fn, class... Args>
+    auto set_task(INTERACT_T, AbsoluteTimeTick time, Fn &&Fx, Args &&...Ax)
+        -> std::future<typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type>
+    {
+        using rt = typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type;
+        auto task_ptr = std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
+        auto temp = new lattice{nullptr, nullptr, time.tick, false, [task_ptr]()
+                                { (*task_ptr)(); }};
+        insert_lattice(time.tick, temp);
+        return task_ptr->get_future();
+    }
+
+    template <class Fn, class... Args>
+    void set_task(HOSTING_T, RelativeTimeTick time, Fn &&Fx, Args &&...Ax)
     {
         if (time.tick == 0)
         {
             time.tick = 1;
         }
-        auto *head = calculate_lattice(time.tick + currtick);
-        auto *temp = new lattice{head->prev, head, (periodic ? 0 : currtick) + time.tick, periodic, f};
-        temp->prev->next = temp;
-        head->prev = temp;
+        using rt = typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type;
+        auto task_fn = std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...);
+        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, false, [task_fn]()
+                                { (void)(task_fn()); }};
+        insert_lattice(time.tick + currtick, temp);
+    }
+
+    template <class Fn, class... Args>
+    auto set_task(PERIODIC_T, RelativeTimeTick time, Fn &&Fx, Args &&...Ax)
+    {
+        if (time.tick == 0)
+        {
+            time.tick = 1;
+        }
+        using rt = typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type;
+        auto task_fn = std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...);
+        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, true, [task_fn]()
+                                { (void)(task_fn()); }};
+        insert_lattice(time.tick + currtick, temp);
+    }
+
+    template <class Fn, class... Args>
+    auto set_task(INTERACT_T, RelativeTimeTick time, Fn &&Fx, Args &&...Ax)
+        -> std::future<typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type>
+    {
+        using rt = typename TW_SAFE_INVOKE_RT<Fn(Args...)>::type;
+        if (time.tick == 0)
+        {
+            time.tick = 1;
+        }
+        auto task_ptr = std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
+        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, false, [task_ptr]()
+                                { (*task_ptr)(); }};
+        insert_lattice(time.tick + currtick, temp);
+        return task_ptr->get_future();
     }
 
     void go()
@@ -151,7 +230,8 @@ public:
         while (head != head->next)
         {
             lattice *temp = head->next;
-            std::cout << " ptr: " << (void *)temp << " ele: " << temp->ele << " ticks: " << temp->expired << std::endl;
+            std::cout << " ptr: " << (void *)temp << " ticks: " << temp->expired << std::endl;
+            (temp->ele)();
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
             if (temp->periodic)
@@ -250,13 +330,21 @@ private:
         }
     }
 
+    void insert_lattice(uint32_t ticks, lattice *node)
+    {
+        auto *head = calculate_lattice(ticks);
+        node->prev = head->prev;
+        node->next = head;
+        node->prev->next = node;
+        head->prev = node;
+    }
+
 private:
     tw_fst_t tw_1st;
     tw_nth_t tw_nth[4];
     uint32_t currtick;
 };
 
-template <typename F>
-thread_local typename TimingWheel<F>::lattice *TimingWheel<F>::lattice::freelist = nullptr;
+thread_local typename TimingWheel::lattice *TimingWheel::lattice::freelist = nullptr;
 
 #endif

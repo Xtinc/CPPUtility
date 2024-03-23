@@ -2,35 +2,52 @@
 #include <chrono>
 #include <thread>
 
+struct testccc
+{
+    int a;
+    int tst()
+    {
+        printf("%d\n", a);
+        return 4;
+    }
+};
+
+void print_t(int a)
+{
+    printf("%d\n", a);
+}
+
 int main(int, char **)
 {
-    TimingWheel<int> tw;
-    tw.set_task(1, 1_ABST);
-    tw.set_task(2, 1_ABST);
-    tw.set_task(3, 4_ABST);
-    tw.set_task(4, 2_ABST);
-    tw.set_task(5, 3_ABST);
-    tw.set_task(6, 3_ABST);
-    tw.set_task(7, 3_ABST);
-    tw.set_task(8, 5_ABST);
-    tw.set_task(9, 8_ABST);
-    tw.set_task(10, 9_ABST);
-    tw.set_task(11, 10_ABST);
-    tw.set_task(19, 10_ABST, true);
+    testccc ccc{12};
+    TimingWheel tw;
+    tw.set_task(TimingWheel::HOSTING, 1_ABST, print_t, 1);
+    tw.set_task(TimingWheel::HOSTING, 1_ABST, print_t, 2);
+    tw.set_task(TimingWheel::HOSTING, 4_ABST, print_t, 3);
+    tw.set_task(TimingWheel::HOSTING, 2_ABST, print_t, 4);
+    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 5);
+    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 6);
+    tw.set_task(TimingWheel::HOSTING, 3_ABST, print_t, 7);
+    tw.set_task(TimingWheel::HOSTING, 5_ABST, print_t, 8);
+    tw.set_task(TimingWheel::HOSTING, 8_ABST, print_t, 9);
+    tw.set_task(TimingWheel::HOSTING, 19_ABST, &testccc::tst, ccc);
+    tw.set_task(TimingWheel::HOSTING, 10_ABST, &testccc::tst, ccc);
+    auto fff = tw.set_task(TimingWheel::INTERACT, 10_ABST, &testccc::tst, ccc);
     for (size_t i = 0; i < 10; i++)
     {
         tw.go();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    tw.set_task(5, 0_RELT);
-    tw.set_task(5, 0_RELT);
-    tw.set_task(6, 1_RELT);
-    tw.set_task(7, 256_ABST);
-    tw.set_task(7, 1048576_ABST);
-    tw.set_task(8, 32223_RELT);
-    tw.set_task(9, 112983674_ABST);
-    tw.set_task(14, 5_RELT, true);
-    for (size_t i = 0; i < std::numeric_limits<uint32_t>::max(); i++)
+    tw.set_task(TimingWheel::HOSTING, 0_RELT, print_t, 11);
+    tw.set_task(TimingWheel::HOSTING, 0_RELT, print_t, 11);
+    tw.set_task(TimingWheel::HOSTING, 1_RELT, print_t, 12);
+    tw.set_task(TimingWheel::INTERACT, 256_ABST, []()
+                { printf("256_ABST\n"); });
+    tw.set_task(TimingWheel::HOSTING, 1048576_ABST, []()
+                { printf("1048576_ABST\n"); });
+    tw.set_task(TimingWheel::CYCLE, 5_RELT, []()
+                { printf("print period!\n"); });
+    for (size_t i = 0; i < 50; i++)
     {
         tw.go();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));

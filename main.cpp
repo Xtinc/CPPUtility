@@ -28,7 +28,7 @@ struct mem_print
         std::cout << "print_custom: " << ctime(&time) << " " << str << "\n";
         return time;
     }
-    void print_idx(int &x)
+    void print_idx(int x)
     {
         auto now = std::chrono::system_clock::now();
         time_t time = std::chrono::system_clock::to_time_t(now);
@@ -38,15 +38,21 @@ struct mem_print
 
 int main(int, char **)
 {
-    mem_print t1{"test member function"};
     self_print t2;
     TimingWheel tw;
-    int idx = 0;
-    tw.set_task(TimingWheel::PERIODIC, 10_RELT, &mem_print::print_idx, t1, std::ref(idx));
+    std::thread t1([&tw]()
+                   {
+    mem_print t1{"test member function"};
+    for (int i = 0; i < 50; i++)
+    {
+    tw.set_task(TimingWheel::HOSTING, 10_RELT, &mem_print::print_idx, t1, i); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } });
+
     for (size_t i = 0; i < 500; i++)
     {
-        ++idx;
         tw.go();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    t1.join();
 }

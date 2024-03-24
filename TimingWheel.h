@@ -57,6 +57,79 @@ class TimingWheel
     {
     };
 
+    using func_obj = std::function<void()>;
+
+    class Worker
+    {
+        constexpr static auto MAX_SIZE = 101;
+
+    public:
+        Worker() : front(1), rear(0), stop(false), thd(&Worker::do_work, this) {}
+        ~Worker()
+        {
+            {
+                std::unique_lock<std::mutex> lck(mtx);
+                stop = true;
+            }
+            cond.notify_one();
+            thd.join();
+        }
+
+        bool submit(func_obj &&obj)
+        {
+            {
+                std::unique_lock<std::mutex> lck(mtx);
+                if (stop)
+                {
+                    return false;
+                }
+                if ((rear + 2) % MAX_SIZE == front)
+                {
+                    return false;
+                }
+                rear = (rear + 1) % MAX_SIZE;
+                queue[rear] = obj;
+            }
+            cond.notify_one();
+            return true;
+        }
+
+    private:
+        void do_work()
+        {
+            for (;;)
+            {
+                func_obj func;
+                {
+                    std::unique_lock<std::mutex> lck(mtx);
+                    cond.wait(lck, [this]()
+                              { return stop || (length() != 0); });
+                    if (stop && length() == 0)
+                    {
+                        return;
+                    }
+                    func = std::move(queue[front]);
+                    front = (front + 1) % MAX_SIZE;
+                }
+                func();
+            }
+        }
+
+        int length() const
+        {
+            return ((rear + MAX_SIZE) - front + 1) % MAX_SIZE;
+        }
+
+    private:
+        func_obj queue[MAX_SIZE];
+        int front;
+        int rear;
+        bool stop;
+        std::thread thd;
+        std::mutex mtx;
+        std::condition_variable cond;
+    };
+
     constexpr static uint32_t TWR_BITS = 8;
     constexpr static uint32_t TWN_BITS = 6;
     constexpr static uint32_t TWR_SIZE = 1 << TWR_BITS;
@@ -80,7 +153,7 @@ class TimingWheel
         lattice *next;
         uint32_t expired;
         uint32_t lifespan;
-        std::function<void()> ele;
+        func_obj ele;
 
         static void set_init(lattice *node)
         {
@@ -266,7 +339,7 @@ public:
         while (head != head->next)
         {
             lattice *temp = head->next;
-            (temp->ele)();
+            workers[0].submit(std::move(temp->ele));
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
 
@@ -382,6 +455,7 @@ private:
     tw_nth_t tw_nth[4];
     std::atomic_uint32_t currtick;
     std::mutex tw_mtx;
+    Worker workers[1];
 };
 
 thread_local typename TimingWheel::lattice *TimingWheel::lattice::freelist = nullptr;

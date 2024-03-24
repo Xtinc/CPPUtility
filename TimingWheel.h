@@ -10,12 +10,8 @@
 // only for debug
 #include <iomanip>
 
-#if defined(__has_cpp_attribute)
-#if __has_cpp_attribute(__cpp_lib_is_invocable)
+#if defined(__cpp_lib_is_invocable)
 #define TW_SAFE_INVOKE_RT std::invoke_result
-#else
-#define TW_SAFE_INVOKE_RT std::result_of
-#endif
 #else
 #define TW_SAFE_INVOKE_RT std::result_of
 #endif

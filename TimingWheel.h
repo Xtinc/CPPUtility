@@ -4,6 +4,8 @@
 #include <type_traits>
 #include <functional>
 #include <future>
+#include <mutex>
+#include <atomic>
 #include <iostream>
 // only for debug
 #include <iomanip>
@@ -156,7 +158,7 @@ public:
     {
         auto temp = new lattice{nullptr, nullptr, time.tick, 0xFFFFFFFF,
                                 std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
-        insert_lattice((currtick / time.tick + 1) * time.tick, temp);
+        insert_lattice((currtick.load(std::memory_order_acquire) / time.tick + 1) * time.tick, temp);
     }
 
     template <class Fn, class... Args>
@@ -168,7 +170,7 @@ public:
         }
         auto temp = new lattice{nullptr, nullptr, time.tick, cycles - 1,
                                 std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
-        insert_lattice((currtick / time.tick + 1) * time.tick, temp);
+        insert_lattice((currtick.load(std::memory_order_acquire) / time.tick + 1) * time.tick, temp);
     }
 
     template <class Fn, class... Args>
@@ -191,9 +193,10 @@ public:
         {
             time.tick = 1;
         }
-        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, 0,
+        auto real_tick = currtick.load(std::memory_order_acquire) + time.tick;
+        auto temp = new lattice{nullptr, nullptr, real_tick, 0,
                                 std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
-        insert_lattice(time.tick + currtick, temp);
+        insert_lattice(real_tick, temp);
     }
 
     template <class Fn, class... Args>
@@ -203,9 +206,10 @@ public:
         {
             time.tick = 1;
         }
-        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, 0XFFFFFFFF,
+        auto real_tick = currtick.load(std::memory_order_acquire) + time.tick;
+        auto temp = new lattice{nullptr, nullptr, real_tick, 0XFFFFFFFF,
                                 std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
-        insert_lattice(time.tick + currtick, temp);
+        insert_lattice(real_tick, temp);
     }
 
     template <class Fn, class... Args>
@@ -219,9 +223,10 @@ public:
         {
             cycles = 1;
         }
-        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, cycles - 1,
+        auto real_tick = currtick.load(std::memory_order_acquire) + time.tick;
+        auto temp = new lattice{nullptr, nullptr, real_tick, cycles - 1,
                                 std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)};
-        insert_lattice(time.tick + currtick, temp);
+        insert_lattice(real_tick, temp);
     }
 
     template <class Fn, class... Args>
@@ -233,24 +238,26 @@ public:
         {
             time.tick = 1;
         }
+        auto real_tick = currtick.load(std::memory_order_acquire) + time.tick;
         auto task_ptr = std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
-        auto temp = new lattice{nullptr, nullptr, currtick + time.tick, 0, [task_ptr]()
+        auto temp = new lattice{nullptr, nullptr, real_tick, 0, [task_ptr]()
                                 { (*task_ptr)(); }};
-        insert_lattice(time.tick + currtick, temp);
+        insert_lattice(real_tick, temp);
         return task_ptr->get_future();
     }
 
     void go()
     {
-        currtick++;
-        auto index = FST_IDX(currtick);
+        auto ticks = currtick.fetch_add(1, std::memory_order_release) + 1;
+        auto index = FST_IDX(ticks);
+        std::unique_lock<std::mutex> lck(tw_mtx);
         if (index == 0)
         {
             uint32_t i = 0;
             uint32_t tpx = 0;
             do
             {
-                tpx = NTH_IDX(currtick, i);
+                tpx = NTH_IDX(ticks, i);
                 move_lattice_cascade(tw_nth[i] + tpx);
 
             } while (tpx == 0 && ++i < 4);
@@ -259,7 +266,6 @@ public:
         while (head != head->next)
         {
             lattice *temp = head->next;
-            std::cout << " ptr: " << (void *)temp << " ticks: " << temp->expired << std::endl;
             (temp->ele)();
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
@@ -282,7 +288,7 @@ public:
 
     uint32_t now() const
     {
-        return currtick;
+        return currtick.load(std::memory_order_acquire);
     }
 
     // only for debug
@@ -325,7 +331,7 @@ public:
 private:
     lattice *calculate_lattice(uint32_t ticks)
     {
-        uint32_t expired_tick = currtick + ticks;
+        uint32_t expired_tick = currtick.load(std::memory_order_acquire) + ticks;
         lattice *head{};
         if (ticks < TWR_SIZE)
         {
@@ -353,7 +359,7 @@ private:
             lattice *temp = head->next;
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
-            auto *head = calculate_lattice(temp->expired - currtick);
+            auto *head = calculate_lattice(temp->expired - currtick.load(std::memory_order_acquire));
             temp->prev = head->prev;
             temp->next = head;
             temp->prev->next = temp;
@@ -363,6 +369,7 @@ private:
 
     void insert_lattice(uint32_t ticks, lattice *node)
     {
+        std::unique_lock<std::mutex> lck(tw_mtx);
         auto *head = calculate_lattice(ticks);
         node->prev = head->prev;
         node->next = head;
@@ -373,7 +380,8 @@ private:
 private:
     tw_fst_t tw_1st;
     tw_nth_t tw_nth[4];
-    uint32_t currtick;
+    std::atomic_uint32_t currtick;
+    std::mutex tw_mtx;
 };
 
 thread_local typename TimingWheel::lattice *TimingWheel::lattice::freelist = nullptr;

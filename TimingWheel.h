@@ -11,7 +11,7 @@
 #include <iomanip>
 
 #if defined(__cpp_lib_is_invocable)
-// #define TW_SAFE_INVOKE_RT std::invoke_result
+// #define TW_SAFE_INVOKE_RT std::
 #define TW_SAFE_INVOKE_RT std::result_of
 #else
 #define TW_SAFE_INVOKE_RT std::result_of
@@ -61,7 +61,7 @@ class TimingWheel
         constexpr static auto MAX_SIZE = 101;
 
     public:
-        Worker() : front(1), rear(0), stop(false), thd(&Worker::do_work, this) {}
+        Worker() : queue(std::make_unique<func_obj[]>(MAX_SIZE)), front(1), rear(0), stop(false), thd(&Worker::do_work, this) {}
         ~Worker()
         {
             {
@@ -118,7 +118,7 @@ class TimingWheel
         }
 
     private:
-        func_obj queue[MAX_SIZE];
+        std::unique_ptr<func_obj[]> queue;
         int front;
         int rear;
         bool stop;
@@ -189,8 +189,8 @@ class TimingWheel
         static thread_local lattice *freelist;
     };
 
-    using tw_fst_t = lattice[TWR_SIZE];
-    using tw_nth_t = lattice[TWN_SIZE];
+    using tw_fst_t = std::unique_ptr<lattice[]>;
+    using tw_nth_t = std::unique_ptr<lattice[]>;
 
 public:
     constexpr static HOSTING_T HOSTING{};
@@ -199,15 +199,21 @@ public:
     constexpr static CYCLIC_T CYCLES{};
 
     TimingWheel(uint32_t current_time = 0)
-        : currtick(current_time)
+        : tw_1st(std::make_unique<lattice[]>(TWR_SIZE)),
+          tw_nth{std::make_unique<lattice[]>(TWN_SIZE),
+                 std::make_unique<lattice[]>(TWN_SIZE),
+                 std::make_unique<lattice[]>(TWN_SIZE),
+                 std::make_unique<lattice[]>(TWN_SIZE)},
+          currtick(current_time)
     {
+        auto temp = tw_1st.get();
         for (size_t i = 0; i < TWR_SIZE; i++)
         {
-            lattice::set_init(tw_1st + i);
+            lattice::set_init(temp + i);
         }
         for (size_t j = 0; j < 4; j++)
         {
-            auto *temp = tw_nth[j];
+            temp = tw_nth[j].get();
             for (size_t i = 0; i < TWN_SIZE; i++)
             {
                 lattice::set_init(temp + i);
@@ -313,14 +319,15 @@ public:
         {
             uint32_t i = 0;
             uint32_t tpx = 0;
+            auto headn = tw_nth[i].get();
             do
             {
                 tpx = NTH_IDX(currtick, i);
-                move_lattice_cascade(tw_nth[i] + tpx);
+                move_lattice_cascade(headn + tpx);
 
             } while (tpx == 0 && ++i < 4);
         }
-        lattice *head = tw_1st + index;
+        lattice *head = tw_1st.get() + index;
         while (head != head->next)
         {
             lattice *temp = head->next;
@@ -351,7 +358,7 @@ public:
         for (size_t i = 0; i < TWR_SIZE; i++)
         {
             std::cout << "list " << std::setw(3) << i << " head: ";
-            lattice *temp = tw_1st + i;
+            lattice *temp = tw_1st.get() + i;
             auto head = temp;
             std::cout << (void *)head;
             while (temp->next != head)
@@ -367,7 +374,7 @@ public:
             for (size_t i = 0; i < TWN_SIZE; i++)
             {
                 std::cout << "list " << std::setw(3) << i << " head: ";
-                lattice *temp = tw_nth[j] + i;
+                lattice *temp = tw_nth[j].get() + i;
                 auto head = temp;
                 std::cout << (void *)head;
                 while (temp->next != head)
@@ -388,7 +395,7 @@ private:
         lattice *head{};
         if (ticks < TWR_SIZE)
         {
-            head = tw_1st + FST_IDX(expired_tick);
+            head = tw_1st.get() + FST_IDX(expired_tick);
         }
         else
         {
@@ -397,7 +404,7 @@ private:
                 uint64_t sz = 1ull << (TWR_BITS + (i + 1) * TWN_BITS);
                 if (ticks < sz)
                 {
-                    head = tw_nth[i] + NTH_IDX(expired_tick, i);
+                    head = tw_nth[i].get() + NTH_IDX(expired_tick, i);
                     break;
                 }
             }

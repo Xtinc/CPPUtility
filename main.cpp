@@ -1,4 +1,5 @@
-#include "TimingWheel.h"
+// #include "TimingWheel.h"
+#include "scheduler.h"
 #include <chrono>
 #include <thread>
 
@@ -39,21 +40,14 @@ struct mem_print
 int main(int, char **)
 {
     self_print t2;
-    TimingWheel tw;
+    Scheduler tw;
     t2("start!");
-    for (size_t i = 0; i < 2; i++)
+    mem_print p1{"cus"};
+    tw.set_task(2_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
+    for (size_t i = 0; i < 300; i++)
     {
         tw.go();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        printf("s: %03zu\n", i);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    std::thread t1([&tw]()
-                   {
-        mem_print p1{"cus"};
-        tw.set_task(TimingWheel::CYCLES,3_ABST,3,&mem_print::get_time,p1); });
-    for (size_t i = 0; i < 12; i++)
-    {
-        tw.go();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-    t1.join();
 }

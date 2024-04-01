@@ -90,12 +90,30 @@ void Scheduler::move_lattice_cascade(lattice *head, uint32_t current_ticks)
     }
 }
 
-void Scheduler::insert_lattice(uint32_t ticks, lattice *node)
+void Scheduler::insert_lattice(uint32_t ticks, lattice *node, char isRelative)
 {
     std::unique_lock<std::mutex> lck(tw_mtx);
     auto current_ticks = currtick.load(std::memory_order_acquire);
-    node->task.expired = current_ticks + ticks;
-    auto head = calculate_lattice(ticks, current_ticks);
+    if (isRelative == 'r' && ticks < current_ticks)
+    {
+        return;
+    }
+    uint32_t relative_ticks;
+    switch (isRelative)
+    {
+    case 'r':
+        relative_ticks = ticks;
+        break;
+    case 'a':
+        relative_ticks = ticks - current_ticks;
+        break;
+    case 'c':
+        relative_ticks = (currtick / ticks + 1) * ticks - currtick + 1;
+    default:
+        return;
+    }
+    node->task.expired = current_ticks + relative_ticks;
+    auto head = calculate_lattice(relative_ticks, current_ticks);
     node->prev = head->prev;
     node->next = head;
     node->prev->next = node;

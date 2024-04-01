@@ -126,10 +126,50 @@ public:
     }
 
     template <class Fn, class... Args>
+    void set_task(AbsoluteTimeTick time, Fn &&Fx, Args &&...Ax)
+    {
+        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        insert_lattice(time.tick, temp, 'a');
+    }
+
+    template <class Fn, class... Args>
     void set_task(RelativeTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
     {
         auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp);
+    }
+
+    template <class Fn, class... Args>
+    void set_task(AbsoluteTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
+    {
+        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        insert_lattice(time.tick, temp, 'c');
+    }
+
+    template <class Fn, class... Args>
+    auto set_task(RelativeTimeTick time, void *, Fn &&Fx, Args &&...Ax)
+        -> std::future<typename std::result_of<Fn(Args...)>::type>
+    {
+        using rt = typename std::result_of<Fn(Args...)>::type;
+        auto task_ptr =
+            std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
+        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, [task_ptr]()
+                                                          { (*task_ptr)(); }}};
+        insert_lattice(time.tick, temp);
+        return task_ptr->get_future();
+    }
+
+    template <class Fn, class... Args>
+    auto set_task(AbsoluteTimeTick time, void *, Fn &&Fx, Args &&...Ax)
+        -> std::future<typename std::result_of<Fn(Args...)>::type>
+    {
+        using rt = typename std::result_of<Fn(Args...)>::type;
+        auto task_ptr =
+            std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
+        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, [task_ptr]()
+                                                          { (*task_ptr)(); }}};
+        insert_lattice(time.tick, temp, 'a');
+        return task_ptr->get_future();
     }
 
     // only for debug
@@ -174,7 +214,7 @@ private:
 
     void move_lattice_cascade(lattice *head, uint32_t current_ticks);
 
-    void insert_lattice(uint32_t ticks, lattice *node);
+    void insert_lattice(uint32_t ticks, lattice *node, char isRelative = 'r');
 
 private:
     tw_fst_t tw_1st;

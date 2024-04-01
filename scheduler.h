@@ -209,7 +209,7 @@ private:
     int rear;
     bool stop;
     Scheduler &tw;
-    std::thread thd;
+    std::vector<std::thread> thd;
     std::mutex mtx;
     std::condition_variable cond;
 };

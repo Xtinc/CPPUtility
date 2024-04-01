@@ -45,7 +45,6 @@ void Scheduler::go()
     while (head != head->next)
     {
         auto temp = head->next;
-        // temp->task.func();
         workers->submit(std::move(temp->task));
         temp->next->prev = temp->prev;
         temp->prev->next = temp->next;
@@ -105,8 +104,12 @@ void Scheduler::insert_lattice(uint32_t ticks, lattice *node)
 
 Worker::Worker(Scheduler &_tw)
     : queue(std::make_unique<TaskObj[]>(MAX_SIZE)),
-      front(1), rear(0), stop(false), tw(_tw), thd(&Worker::do_work, this)
+      front(1), rear(0), stop(false), tw(_tw)
 {
+    for (size_t i = 0; i < 2; i++)
+    {
+        thd.emplace_back(&Worker::do_work, this);
+    }
 }
 
 Worker::~Worker()
@@ -115,8 +118,11 @@ Worker::~Worker()
         std::unique_lock<std::mutex> lck(mtx);
         stop = true;
     }
-    cond.notify_one();
-    thd.join();
+    cond.notify_all();
+    for (auto &ele : thd)
+    {
+        ele.join();
+    }
 }
 
 bool Worker::submit(TaskObj &&obj)
@@ -154,16 +160,27 @@ void Worker::do_work()
             task = std::move(queue[front]);
             front = (front + 1) % MAX_SIZE;
         }
-        // task.started = tw.now();
-        task.func();
-        auto finished_ticks = tw.now();
-        if (finished_ticks - task.started > task.duration)
+        task.started = tw.now();
+        try
         {
-            printf("task time out!: %lu\n", finished_ticks - task.started);
+            task.func();
+        }
+        catch (const std::exception &e)
+        {
+            printf("error: %s\n", e.what());
+            throw e;
+        }
+        auto exceed_ticks = tw.now() - task.started;
+        auto penalty_ticks = 0;
+        if (exceed_ticks > task.duration)
+        {
+            penalty_ticks = exceed_ticks;
+            printf("task time out!: %lu\n", exceed_ticks);
         }
         if (--task.counters != 0)
         {
-            tw.insert_lattice(task.duration, new Scheduler::lattice{nullptr, nullptr, std::move(task)});
+            tw.insert_lattice(task.duration + penalty_ticks,
+                              new Scheduler::lattice{nullptr, nullptr, std::move(task)});
         }
     }
 }

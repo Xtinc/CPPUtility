@@ -43,6 +43,7 @@ int main(int, char **)
     Scheduler tw;
     t2("start!");
     mem_print p1{"cus"};
+    tw.set_task(4_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
     tw.set_task(2_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
     for (size_t i = 0; i < 300; i++)
     {

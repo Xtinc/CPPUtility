@@ -3,8 +3,10 @@
 
 #include <type_traits>
 #include <functional>
+#include <thread>
 #include <future>
 #include <mutex>
+#include <vector>
 #include <atomic>
 // only for debug
 #include <iostream>
@@ -75,14 +77,8 @@ class Scheduler
             node->next = node;
         }
 
-        void *operator new(size_t)
+        static void print_free_list()
         {
-            if (freelist == nullptr)
-            {
-                return ::new lattice;
-            }
-            auto *temp = freelist;
-            freelist = freelist->next;
             // for debug
             auto head = freelist;
             std::cout << "freelist: " << (void *)head;
@@ -92,24 +88,38 @@ class Scheduler
                 std::cout << " -> " << (void *)head;
             }
             std::cout << "\n";
+        }
+
+        void *operator new(size_t)
+        {
+            std::lock_guard<std::mutex> lck(mem_mtx);
+            if (freelist == nullptr)
+            {
+                return ::new lattice;
+            }
+            auto *temp = freelist;
+            freelist = freelist->next;
             return temp;
         }
 
         void operator delete(void *ptr)
         {
+            std::lock_guard<std::mutex> lck(mem_mtx);
             ((lattice *)ptr)->next = freelist;
             freelist = (lattice *)ptr;
         }
 
     private:
-        static thread_local lattice *freelist;
+        static lattice *freelist;
+        static std::mutex mem_mtx;
     };
 
-    using tw_fst_t = std::unique_ptr<lattice[]>;
-    using tw_nth_t = std::unique_ptr<lattice[]>;
+    using tw_fst_t = lattice *[TWR_SIZE];
+    using tw_nth_t = lattice *[TWN_SIZE];
 
 public:
     Scheduler(uint32_t current_time = 0);
+    ~Scheduler();
 
     void go();
 
@@ -121,28 +131,28 @@ public:
     template <class Fn, class... Args>
     void set_task(RelativeTimeTick time, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, 0xFFFFFFFF, 1, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp);
     }
 
     template <class Fn, class... Args>
     void set_task(AbsoluteTimeTick time, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, 0xFFFFFFFF, 1, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp, 'a');
     }
 
     template <class Fn, class... Args>
     void set_task(RelativeTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp);
     }
 
     template <class Fn, class... Args>
     void set_task(AbsoluteTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp, 'c');
     }
 
@@ -153,8 +163,8 @@ public:
         using rt = typename std::result_of<Fn(Args...)>::type;
         auto task_ptr =
             std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, [task_ptr]()
-                                                          { (*task_ptr)(); }}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, 0xFFFFFFFF, 1, [task_ptr]()
+                                                   { (*task_ptr)(); }}};
         insert_lattice(time.tick, temp);
         return task_ptr->get_future();
     }
@@ -166,8 +176,8 @@ public:
         using rt = typename std::result_of<Fn(Args...)>::type;
         auto task_ptr =
             std::make_shared<std::packaged_task<rt()>>(std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...));
-        auto temp = new lattice{nullptr, nullptr, TaskObj{0, 0, 0xFFFFFFFF, 1, [task_ptr]()
-                                                          { (*task_ptr)(); }}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, 0xFFFFFFFF, 1, [task_ptr]()
+                                                   { (*task_ptr)(); }}};
         insert_lattice(time.tick, temp, 'a');
         return task_ptr->get_future();
     }
@@ -179,7 +189,7 @@ public:
         for (size_t i = 0; i < TWR_SIZE; i++)
         {
             std::cout << "list " << std::setw(3) << i << " head: ";
-            lattice *temp = tw_1st.get() + i;
+            lattice *temp = tw_1st[i];
             auto head = temp;
             std::cout << (void *)head;
             while (temp->next != head)
@@ -195,7 +205,7 @@ public:
             for (size_t i = 0; i < TWN_SIZE; i++)
             {
                 std::cout << "list " << std::setw(3) << i << " head: ";
-                lattice *temp = tw_nth[j].get() + i;
+                lattice *temp = tw_nth[j][i];
                 auto head = temp;
                 std::cout << (void *)head;
                 while (temp->next != head)

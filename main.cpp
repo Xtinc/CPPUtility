@@ -39,16 +39,17 @@ struct mem_print
 
 int main(int, char **)
 {
-    self_print t2;
+    self_print t;
     Scheduler tw;
-    t2("start!");
-    mem_print p1{"cus"};
-    tw.set_task(4_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
-    tw.set_task(2_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
+    t("start!");
+    mem_print p1{"talker1"};
+    mem_print p2{"talker2"};
+    tw.set_task(1_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
+    tw.set_task(2_RELT, (uint32_t)0xff, &mem_print::get_time, p2);
     for (size_t i = 0; i < 300; i++)
     {
         tw.go();
         printf("s: %03zu\n", i);
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 }

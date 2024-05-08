@@ -1,26 +1,55 @@
 #include "scheduler.h"
 
-thread_local Scheduler::lattice *Scheduler::lattice::freelist = nullptr;
+Scheduler::lattice *Scheduler::lattice::freelist = nullptr;
+std::mutex Scheduler::lattice::mem_mtx = {};
 
 Scheduler::Scheduler(uint32_t current_time)
-    : tw_1st(std::make_unique<lattice[]>(TWR_SIZE)),
-      tw_nth{std::make_unique<lattice[]>(TWN_SIZE),
-             std::make_unique<lattice[]>(TWN_SIZE),
-             std::make_unique<lattice[]>(TWN_SIZE),
-             std::make_unique<lattice[]>(TWN_SIZE)},
-      currtick(current_time), workers(std::make_unique<Worker>(*this))
+    : currtick(current_time), workers(std::make_unique<Worker>(*this))
 {
-    auto temp = tw_1st.get();
     for (size_t i = 0; i < TWR_SIZE; i++)
     {
-        lattice::set_init(temp + i);
+        tw_1st[i] = new lattice;
+        lattice::set_init(tw_1st[i]);
     }
     for (size_t j = 0; j < 4; j++)
     {
-        temp = tw_nth[j].get();
+        auto &headn = tw_nth[j];
         for (size_t i = 0; i < TWN_SIZE; i++)
         {
-            lattice::set_init(temp + i);
+            headn[i] = new lattice;
+            lattice::set_init(headn[i]);
+        }
+    }
+}
+
+Scheduler::~Scheduler()
+{
+    for (size_t i = 0; i < TWR_SIZE; i++)
+    {
+        lattice *head = tw_1st[i];
+        while (head != head->next)
+        {
+            auto temp = head->next;
+            temp->next->prev = temp->prev;
+            temp->prev->next = temp->next;
+            delete temp;
+        }
+        delete head;
+    }
+    for (size_t j = 0; j < 4; j++)
+    {
+        auto &headn = tw_nth[j];
+        for (size_t i = 0; i < TWN_SIZE; i++)
+        {
+            lattice *head = headn[i];
+            while (head != head->next)
+            {
+                auto temp = head->next;
+                temp->next->prev = temp->prev;
+                temp->prev->next = temp->next;
+                delete temp;
+            }
+            delete head;
         }
     }
 }
@@ -37,11 +66,11 @@ void Scheduler::go()
         do
         {
             tpx = NTH_IDX(currtick, i);
-            move_lattice_cascade(tw_nth[i].get() + tpx, current_ticks);
+            move_lattice_cascade(tw_nth[i][tpx], current_ticks);
 
         } while (tpx == 0 && ++i < 4);
     }
-    lattice *head = tw_1st.get() + index;
+    lattice *head = tw_1st[index];
     while (head != head->next)
     {
         auto temp = head->next;
@@ -58,7 +87,7 @@ Scheduler::lattice *Scheduler::calculate_lattice(uint32_t ticks, uint32_t curren
     lattice *head{};
     if (ticks < TWR_SIZE)
     {
-        head = tw_1st.get() + FST_IDX(expired_tick);
+        head = tw_1st[FST_IDX(expired_tick)];
     }
     else
     {
@@ -67,7 +96,7 @@ Scheduler::lattice *Scheduler::calculate_lattice(uint32_t ticks, uint32_t curren
             uint64_t sz = 1ull << (TWR_BITS + (i + 1) * TWN_BITS);
             if (ticks < sz)
             {
-                head = tw_nth[i].get() + NTH_IDX(expired_tick, i);
+                head = tw_nth[i][NTH_IDX(expired_tick, i)];
                 break;
             }
         }
@@ -94,7 +123,7 @@ void Scheduler::insert_lattice(uint32_t ticks, lattice *node, char isRelative)
 {
     std::unique_lock<std::mutex> lck(tw_mtx);
     auto current_ticks = currtick.load(std::memory_order_acquire);
-    if (isRelative == 'r' && ticks < current_ticks)
+    if (isRelative == 'a' && ticks < current_ticks)
     {
         return;
     }

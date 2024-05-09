@@ -57,7 +57,7 @@ Scheduler::~Scheduler()
 void Scheduler::go()
 {
     std::unique_lock<std::mutex> lck(tw_mtx);
-    auto current_ticks = currtick.fetch_add(1, std::memory_order_release) + 1;
+    auto current_ticks = currtick.fetch_add(1, std::memory_order_release);
     auto index = FST_IDX(current_ticks);
     if (index == 0)
     {
@@ -138,6 +138,7 @@ void Scheduler::insert_lattice(uint32_t ticks, lattice *node, char isRelative)
         break;
     case 'c':
         relative_ticks = (currtick / ticks + 1) * ticks - currtick + 1;
+        break;
     default:
         return;
     }
@@ -218,8 +219,8 @@ void Worker::do_work()
             throw e;
         }
         auto exceed_ticks = tw.now() - task.started;
-        auto penalty_ticks = 0;
-        if (exceed_ticks > task.duration)
+        auto penalty_ticks = task.duration != 0 ? -1 : 0;
+        if (task.duration != 0 && exceed_ticks > task.duration)
         {
             penalty_ticks = exceed_ticks;
             printf("task time out!: %lu\n", exceed_ticks);

@@ -52,11 +52,12 @@ Scheduler::~Scheduler()
             delete head;
         }
     }
+    lattice::free();
 }
 
 void Scheduler::go()
 {
-    std::unique_lock<std::mutex> lck(tw_mtx);
+    std::lock_guard<std::mutex> grd(tw_mtx);
     auto current_ticks = currtick.fetch_add(1, std::memory_order_release);
     auto index = FST_IDX(current_ticks);
     if (index == 0)
@@ -77,6 +78,7 @@ void Scheduler::go()
         workers->submit(std::move(temp->task));
         temp->next->prev = temp->prev;
         temp->prev->next = temp->next;
+        temp->task.func = {};
         delete temp;
     }
 }
@@ -121,7 +123,7 @@ void Scheduler::move_lattice_cascade(lattice *head, uint32_t current_ticks)
 
 void Scheduler::insert_lattice(uint32_t ticks, lattice *node, char isRelative)
 {
-    std::unique_lock<std::mutex> lck(tw_mtx);
+    std::lock_guard<std::mutex> grd(tw_mtx);
     auto current_ticks = currtick.load(std::memory_order_acquire);
     if (isRelative == 'a' && ticks < current_ticks)
     {
@@ -163,7 +165,7 @@ Worker::Worker(Scheduler &_tw)
 Worker::~Worker()
 {
     {
-        std::unique_lock<std::mutex> lck(mtx);
+        std::lock_guard<std::mutex> grd(mtx);
         stop = true;
     }
     cond.notify_all();
@@ -176,7 +178,7 @@ Worker::~Worker()
 bool Worker::submit(TaskObj &&obj)
 {
     {
-        std::unique_lock<std::mutex> lck(mtx);
+        std::lock_guard<std::mutex> grd(mtx);
         if (stop)
         {
             return false;

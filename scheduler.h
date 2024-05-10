@@ -77,6 +77,17 @@ class Scheduler
             node->next = node;
         }
 
+        static void free()
+        {
+            std::lock_guard<std::mutex> grd(mem_mtx);
+            while (freelist != nullptr)
+            {
+                auto temp = freelist;
+                freelist = freelist->next;
+                ::delete temp;
+            }
+        }
+
         static void print_free_list()
         {
             // for debug
@@ -92,7 +103,7 @@ class Scheduler
 
         void *operator new(size_t)
         {
-            std::lock_guard<std::mutex> lck(mem_mtx);
+            std::lock_guard<std::mutex> grd(mem_mtx);
             if (freelist == nullptr)
             {
                 return ::new lattice;
@@ -104,7 +115,7 @@ class Scheduler
 
         void operator delete(void *ptr)
         {
-            std::lock_guard<std::mutex> lck(mem_mtx);
+            std::lock_guard<std::mutex> grd(mem_mtx);
             ((lattice *)ptr)->next = freelist;
             freelist = (lattice *)ptr;
         }
@@ -118,7 +129,7 @@ class Scheduler
     using tw_nth_t = lattice *[TWN_SIZE];
 
 public:
-    Scheduler(uint32_t current_time = 0);
+    explicit Scheduler(uint32_t current_time = 0);
     ~Scheduler();
 
     void go();
@@ -239,7 +250,7 @@ class Worker
     constexpr static auto MAX_SIZE = 101;
 
 public:
-    Worker(Scheduler &_tw);
+    explicit Worker(Scheduler &_tw);
 
     ~Worker();
 

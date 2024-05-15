@@ -32,6 +32,7 @@ Scheduler::~Scheduler()
             auto temp = head->next;
             temp->next->prev = temp->prev;
             temp->prev->next = temp->next;
+            temp->task = {};
             delete temp;
         }
         delete head;
@@ -47,6 +48,7 @@ Scheduler::~Scheduler()
                 auto temp = head->next;
                 temp->next->prev = temp->prev;
                 temp->prev->next = temp->next;
+                temp->task = {};
                 delete temp;
             }
             delete head;
@@ -78,7 +80,6 @@ void Scheduler::go()
         workers->submit(std::move(temp->task));
         temp->next->prev = temp->prev;
         temp->prev->next = temp->next;
-        temp->task.func = {};
         delete temp;
     }
 }

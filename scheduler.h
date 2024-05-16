@@ -154,16 +154,16 @@ public:
     }
 
     template <class Fn, class... Args>
-    void set_task(RelativeTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
+    void set_task(RelativeTimeTick time, AbsoluteTimeTick period, uint32_t cycles, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, {0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, period.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp);
     }
 
     template <class Fn, class... Args>
-    void set_task(AbsoluteTimeTick time, uint32_t cycles, Fn &&Fx, Args &&...Ax)
+    void set_task(AbsoluteTimeTick time, AbsoluteTimeTick period, uint32_t cycles, Fn &&Fx, Args &&...Ax)
     {
-        auto temp = new lattice{nullptr, nullptr, {0, 0, time.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
+        auto temp = new lattice{nullptr, nullptr, {0, 0, period.tick, cycles, std::bind(std::forward<Fn>(Fx), std::forward<Args>(Ax)...)}};
         insert_lattice(time.tick, temp, 'c');
     }
 

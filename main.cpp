@@ -44,8 +44,8 @@ int main(int, char **)
     t("start!");
     mem_print p1{"talker1"};
     mem_print p2{"talker2"};
-    tw.set_task(1_RELT, (uint32_t)0xff, &mem_print::get_time, p1);
-    tw.set_task(2_RELT, (uint32_t)0xff, &mem_print::get_time, p2);
+    tw.set_task(1_RELT, 1_ABST, (uint32_t)0xff, &mem_print::get_time, p1);
+    tw.set_task(0_RELT, 2_ABST, (uint32_t)0xff, &mem_print::get_time, p2);
     for (size_t i = 0; i < 300; i++)
     {
         tw.go();

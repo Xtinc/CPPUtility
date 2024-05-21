@@ -224,15 +224,15 @@ void Worker::do_work()
         }
         auto exceed_ticks = tw.now() - task.started;
         auto penalty_ticks = task.duration != 0 ? -1 : 0;
+        penalty_ticks += task.duration;
         if (task.duration != 0 && exceed_ticks > task.duration)
         {
-            penalty_ticks = exceed_ticks;
+            penalty_ticks += exceed_ticks;
             printf("task time out!: %lu\n", exceed_ticks);
         }
         if (--task.counters != 0)
         {
-            tw.insert_lattice(task.duration + penalty_ticks,
-                              new Scheduler::lattice{nullptr, nullptr, std::move(task)});
+            tw.insert_lattice(penalty_ticks, new Scheduler::lattice{nullptr, nullptr, std::move(task)});
         }
     }
 }

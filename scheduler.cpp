@@ -65,7 +65,7 @@ void Scheduler::go()
     if (index == 0)
     {
         uint32_t i = 0;
-        uint32_t tpx = 0;
+        uint32_t tpx;
         do
         {
             tpx = NTH_IDX(currtick, i);
@@ -74,12 +74,13 @@ void Scheduler::go()
         } while (tpx == 0 && ++i < 4);
     }
     lattice *head = tw_1st[index];
-    while (head != head->next)
+    while (head && head != head->next)
     {
         auto temp = head->next;
         workers->submit(std::move(temp->task));
         temp->next->prev = temp->prev;
         temp->prev->next = temp->next;
+        temp->task = {};
         delete temp;
     }
 }

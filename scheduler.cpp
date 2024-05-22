@@ -223,12 +223,14 @@ void Worker::do_work()
             throw e;
         }
         auto exceed_ticks = tw.now() - task.started;
-        auto penalty_ticks = task.duration != 0 ? -1 : 0;
-        penalty_ticks += task.duration;
+        auto penalty_ticks = task.duration != 0 ? task.duration - 1 : task.duration;
         if (task.duration != 0 && exceed_ticks > task.duration)
         {
             penalty_ticks += exceed_ticks;
-            printf("task time out!: %lu\n", exceed_ticks);
+            if (task.hand)
+            {
+                task.hand(exceed_ticks, task.counters);
+            }
         }
         if (--task.counters != 0)
         {

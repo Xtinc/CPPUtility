@@ -12,6 +12,8 @@
 #include <iostream>
 #include <iomanip>
 
+#define SCHD_ASYNC_TASK ((void *)nullptr)
+
 struct AbsoluteTimeTick
 {
     constexpr AbsoluteTimeTick(uint32_t t) : tick(t){};
@@ -41,6 +43,7 @@ struct TaskObj
     uint32_t duration{};
     uint32_t counters{};
     std::function<void()> func{};
+    std::function<void(uint32_t exceed_tick, uint32_t &counters)> hand;
 };
 
 class Worker;
@@ -137,6 +140,16 @@ public:
     uint32_t now() const
     {
         return currtick.load(std::memory_order_acquire);
+    }
+
+    void set_task(RelativeTimeTick time, TaskObj obj)
+    {
+        insert_lattice(time.tick, new lattice{nullptr, nullptr, std::move(obj)});
+    }
+
+    void set_task(RelativeTimeTick time, TaskObj obj)
+    {
+        insert_lattice(time.tick, new lattice{nullptr, nullptr, std::move(obj)}, 'a');
     }
 
     template <class Fn, class... Args>
